@@ -24,6 +24,7 @@ const DEFAULT_TTY: &str = "COM5";
 struct Tracker {
     socket: Arc<UdpSocket>,
     last_message: SystemTime,
+    last_ms: u32,
     task: JoinHandle<()>,
 }
 
@@ -68,11 +69,13 @@ async fn main() -> tokio_serial::Result<()> {
         let mac = MacAddr6::from(mac_buffer);
         let length = port_in.read_u16().await?;
         let timestamp = port_in.read_u32().await?;
-        println!("{:#08} Packet from {mac} of length {length}", timestamp);
+        // println!("{:#08} Packet from {mac} of length {length}", timestamp);
 
         let mut buffer = vec![0u8; length as usize];
         port_in.read_exact(&mut buffer).await?;
-        println!("{:X?}", buffer);
+        // println!("{:X?}", buffer);
+
+        let received_at = SystemTime::now();
 
         let mut trackers = trackers_mutex.lock().await;
 
@@ -87,7 +90,7 @@ async fn main() -> tokio_serial::Result<()> {
                     let mut buffer = [0u8; 1024];
                     let length = task_socket.recv(&mut buffer).await.unwrap();
 
-                    println!("Packet to   {mac} of length {length}");
+                    // println!("Packet to   {mac} of length {length}");
 
                     let mut port_out = port_out.lock().await;
 
@@ -105,7 +108,8 @@ async fn main() -> tokio_serial::Result<()> {
 
             let tracker = Arc::new(StdMutex::new(Tracker {
                 socket,
-                last_message: SystemTime::now(),
+                last_message: received_at,
+                last_ms: timestamp,
                 task: tokio::spawn(future),
             }));
 
@@ -119,7 +123,12 @@ async fn main() -> tokio_serial::Result<()> {
 
         let mut tracker = tracker_mutex.lock().unwrap();
 
-        tracker.last_message = SystemTime::now();
+        let deviation = received_at.duration_since(tracker.last_message).unwrap().as_millis() as i128 - (timestamp - tracker.last_ms) as i128;
+        // println!("Deviation: {deviation}ms");
+        println!("{deviation:03} {:#08} Packet from {mac} of length {length}", timestamp);
+
+        tracker.last_message = received_at;
+        tracker.last_ms = timestamp;
         tracker.socket.send(&buffer).await?;
     }
 }
