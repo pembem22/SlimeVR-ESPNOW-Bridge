@@ -91,12 +91,12 @@ async fn main() -> tokio_serial::Result<()> {
 
                     let mut port_out = port_out.lock().await;
 
-                    port_out.write_all(mac.as_bytes()).await.unwrap();
-                    port_out
-                        .write_u16(length.try_into().unwrap())
-                        .await
-                        .unwrap();
-                    port_out.write_all(&buffer[0..length]).await.unwrap();
+                    let mut out_buffer: Vec<u8> = Vec::with_capacity(6 + 2 + length);
+                    out_buffer.extend_from_slice(mac.as_bytes());
+                    out_buffer.extend_from_slice(&u16::try_from(length).unwrap().to_be_bytes());
+                    out_buffer.extend_from_slice(&buffer[0..length]);
+
+                    port_out.write_all(&out_buffer).await.unwrap();
                     port_out.flush().await.unwrap();
 
                     // println!("{:X?}", &buffer[0..length]);
